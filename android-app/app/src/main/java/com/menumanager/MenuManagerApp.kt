@@ -14,4 +14,9 @@ class MenuManagerApp : Application() {
     val container: ServiceLocator by lazy {
         ServiceLocator(applicationContext, appScope)
     }
+
+    override fun onCreate() {
+        super.onCreate()
+        com.menumanager.sync.SyncNotifications.ensureChannel(this)
+    }
 }

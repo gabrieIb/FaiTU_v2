@@ -1,9 +1,14 @@
 package com.menumanager
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.viewModels
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,6 +35,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Fastfood
 import androidx.compose.material.icons.automirrored.outlined.ListAlt
@@ -68,9 +74,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -85,6 +95,10 @@ import com.menumanager.data.model.ShoppingEntry
 import com.menumanager.ui.MenuViewModel
 import com.menumanager.ui.MenuViewModelFactory
 import com.menumanager.ui.theme.MenuManagerTheme
+import com.menumanager.sync.SyncScheduler
+import androidx.core.content.ContextCompat
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import kotlinx.coroutines.delay
 import java.util.Locale
 
@@ -114,32 +128,82 @@ fun MenuApp(viewModel: MenuViewModel) {
     val hasPending by viewModel.hasPending.collectAsStateWithLifecycle()
     var showProposalWizard by remember { mutableStateOf(false) }
     var showShoppingDialog by remember { mutableStateOf(false) }
+    var showResetDialog by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var statusIsError by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val hapticFeedback = LocalHapticFeedback.current
+    val workInfosLiveData = remember(context) {
+        WorkManager.getInstance(context).getWorkInfosForUniqueWorkLiveData(SyncScheduler.UNIQUE_WORK_NAME)
+    }
+    val syncWorkInfos by workInfosLiveData.observeAsState(emptyList())
+    val currentSyncState = syncWorkInfos.firstOrNull()?.state
+    val isSyncActive = currentSyncState == WorkInfo.State.RUNNING ||
+        currentSyncState == WorkInfo.State.ENQUEUED ||
+        currentSyncState == WorkInfo.State.BLOCKED
+    var lastReportedSyncState by remember { mutableStateOf<WorkInfo.State?>(null) }
+
+    fun emitStatus(message: String, isError: Boolean = false, triggerHaptic: Boolean = false) {
+        statusMessage = message
+        statusIsError = isError
+        if (triggerHaptic) {
+            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+        }
+    }
+
+    fun buildResultHandler(
+        successMessage: String,
+        onSuccess: (() -> Unit)? = null,
+        triggerHaptic: Boolean = true
+    ): (Throwable?) -> Unit = { error ->
+        val message = error?.message?.let { "Errore: $it" } ?: successMessage
+        val shouldHaptic = triggerHaptic || error != null
+        emitStatus(message, isError = error != null, triggerHaptic = shouldHaptic)
+        if (error == null) {
+            onSuccess?.invoke()
+        }
+    }
+
+    fun triggerSync() {
+        SyncScheduler.enqueue(context, triggeredByUser = true)
+        emitStatus("Sincronizzazione avviata…")
+    }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            triggerSync()
+        } else {
+            emitStatus("Attiva le notifiche per vedere lo stato della sincronizzazione", isError = true)
+        }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.refresh()
     }
 
-    LaunchedEffect(statusMessage) {
-        if (statusMessage != null) {
+    LaunchedEffect(statusMessage, isSyncActive) {
+        if (statusMessage != null && !isSyncActive) {
             delay(2500)
             statusMessage = null
             statusIsError = false
         }
     }
 
-    fun emitStatus(message: String, isError: Boolean = false) {
-        statusMessage = message
-        statusIsError = isError
-    }
-
-    fun buildResultHandler(successMessage: String, onSuccess: (() -> Unit)? = null): (Throwable?) -> Unit = { error ->
-        val message = error?.message?.let { "Errore: $it" } ?: successMessage
-        emitStatus(message, isError = error != null)
-        if (error == null) {
-            onSuccess?.invoke()
+    LaunchedEffect(currentSyncState) {
+        if (currentSyncState == lastReportedSyncState) {
+            return@LaunchedEffect
         }
+        when (currentSyncState) {
+            WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> emitStatus("Sincronizzazione in attesa…")
+            WorkInfo.State.RUNNING -> emitStatus("Sincronizzazione in corso…")
+            WorkInfo.State.SUCCEEDED -> emitStatus("Sincronizzazione completata", triggerHaptic = true)
+            WorkInfo.State.FAILED -> emitStatus("Errore durante la sincronizzazione", isError = true, triggerHaptic = true)
+            WorkInfo.State.CANCELLED -> emitStatus("Sincronizzazione annullata", isError = true)
+            else -> Unit
+        }
+        lastReportedSyncState = currentSyncState
     }
 
     Scaffold(
@@ -147,16 +211,31 @@ fun MenuApp(viewModel: MenuViewModel) {
             TopAppBar(
                 title = { Text(text = "Fai tu!") },
                 actions = {
-                    TextButton(onClick = {
-                        viewModel.sync(
-                            onResult = buildResultHandler(
-                                if (hasPending) "Modifiche sincronizzate" else "Aggiornato"
-                            )
-                        )
-                    }) {
+                    IconButton(onClick = { showResetDialog = true }) {
+                        Icon(imageVector = Icons.Filled.DeleteSweep, contentDescription = "Cancella tutto")
+                    }
+                    TextButton(
+                        enabled = !isSyncActive,
+                        onClick = {
+                            if (
+                                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                            ) {
+                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                triggerSync()
+                            }
+                        }
+                    ) {
                         Icon(imageVector = Icons.Filled.Refresh, contentDescription = null)
                         Spacer(modifier = Modifier.size(6.dp))
-                        Text(if (hasPending) "Sincronizza*" else "Sincronizza")
+                        Text(
+                            when {
+                                isSyncActive -> "Sincronizzo…"
+                                hasPending -> "Sincronizza*"
+                                else -> "Sincronizza"
+                            }
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -288,9 +367,9 @@ fun MenuApp(viewModel: MenuViewModel) {
                     title = draft.title,
                     notes = draft.notes,
                     ingredients = payload,
-                    onResult = buildResultHandler("Proposta salvata") {
+                    onResult = buildResultHandler("Proposta salvata", onSuccess = {
                         showProposalWizard = false
-                    }
+                    })
                 )
             }
         )
@@ -307,9 +386,9 @@ fun MenuApp(viewModel: MenuViewModel) {
                     proposalId == null -> {
                         viewModel.createManualShoppingItem(
                             name = name,
-                            onResult = buildResultHandler("Aggiunto alla spesa") {
+                            onResult = buildResultHandler("Aggiunto alla spesa", onSuccess = {
                                 showShoppingDialog = false
-                            }
+                            })
                         )
                     }
                     else -> {
@@ -317,11 +396,40 @@ fun MenuApp(viewModel: MenuViewModel) {
                             proposalId = proposalId,
                             name = name,
                             needToBuy = true,
-                            onResult = buildResultHandler("Aggiunto alla spesa") {
+                            onResult = buildResultHandler("Aggiunto alla spesa", onSuccess = {
                                 showShoppingDialog = false
-                            }
+                            })
                         )
                     }
+                }
+            }
+        )
+    }
+
+    if (showResetDialog) {
+        AlertDialog(
+            icon = { Icon(imageVector = Icons.Filled.DeleteSweep, contentDescription = null) },
+            onDismissRequest = { showResetDialog = false },
+            title = { Text("Cancella tutto") },
+            text = { Text("Svuota menu, ingredienti e lista della spesa? L'operazione non si può annullare.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.resetAll(
+                        onResult = buildResultHandler(
+                            successMessage = "Dati azzerati",
+                            onSuccess = {
+                                showResetDialog = false
+                                viewModel.refresh()
+                            }
+                        )
+                    )
+                }) {
+                    Text("Svuota")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetDialog = false }) {
+                    Text("Annulla")
                 }
             }
         )

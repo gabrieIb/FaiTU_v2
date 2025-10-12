@@ -48,6 +48,8 @@ function doPost(e) {
         return jsonResponse(saveShoppingItem(params.payload));
       case 'deleteshoppingitem':
         return jsonResponse(deleteShoppingItem(params.payload));
+      case 'resetall':
+        return jsonResponse(resetAllData());
       default:
         return errorResponse('Unknown action', 400);
     }
@@ -248,6 +250,13 @@ function deleteShoppingItem(payload) {
     throw createError('shopping item not found', 404);
   }
   sheet.deleteRow(rowIndex + 1);
+  return { ok: true };
+}
+
+function resetAllData() {
+  clearSheetExceptHeaders(getSheet(SHEET_NAMES.PROPOSALS));
+  clearSheetExceptHeaders(getSheet(SHEET_NAMES.INGREDIENTS));
+  clearSheetExceptHeaders(getSheet(SHEET_NAMES.SHOPPING));
   return { ok: true };
 }
 

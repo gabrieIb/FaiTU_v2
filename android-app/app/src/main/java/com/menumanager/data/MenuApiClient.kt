@@ -169,6 +169,10 @@ class MenuApiClient(
         )
     }
 
+    suspend fun resetAll() {
+        postAction(action = "resetAll", payload = JSONObject())
+    }
+
     private fun parseBoolean(raw: Any?): Boolean = when (raw) {
         is Boolean -> raw
         is Number -> raw.toInt() != 0

@@ -148,6 +148,17 @@ class MenuRepository(
         }
     }
 
+    suspend fun resetAll() {
+        withContext(Dispatchers.IO) { apiClient.resetAll() }
+        stateMutex.withLock {
+            pendingOperations.clear()
+            _hasPending.value = false
+            _state.value = Loadable.Ready(ApiState(emptyList(), emptyList(), emptyList()))
+        }
+        cache.write(ApiState(emptyList(), emptyList(), emptyList()))
+        cache.writePending(emptyList())
+    }
+
     suspend fun syncPending(): Result<Unit> {
         val snapshot = stateMutex.withLock { pendingOperations.toList() }
         if (snapshot.isEmpty()) {

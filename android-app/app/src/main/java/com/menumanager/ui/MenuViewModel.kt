@@ -246,6 +246,15 @@ class MenuViewModel(private val repository: MenuRepository) : ViewModel() {
         }
     }
 
+    fun resetAll(onResult: (Throwable?) -> Unit) {
+        viewModelScope.launch {
+            runCatching {
+                repository.resetAll()
+            }.onSuccess { onResult(null) }
+                .onFailure { onResult(it) }
+        }
+    }
+
     fun sync(onResult: (Throwable?) -> Unit) {
         viewModelScope.launch {
             repository.syncPending()
