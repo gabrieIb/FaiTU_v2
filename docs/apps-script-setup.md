@@ -54,3 +54,10 @@ Before building the APK, open `android-app/app/src/main/java/com/menumanager/App
 - `API_TOKEN` → the value from step 3.
 
 Rebuild (`./gradlew.bat assembleDebug`) and distribute the APK. No runtime configuration screen is needed—the app ships ready for your household.
+
+### Current deployment snapshot
+
+These are the values presently embedded in the published APK and repository:
+
+- `BASE_URL`: `https://script.google.com/macros/s/AKfycbyPjNnr8vHhEadraXjc5Gt6s7I3rp_zCux8L9vO_gilCpjbTEh3bjdF5v5jC4Cc2W4Log/exec`
+- `API_TOKEN`: `deae76a08a291d29d328364151126dedfae61e358882210e968e5655a10b785c`
