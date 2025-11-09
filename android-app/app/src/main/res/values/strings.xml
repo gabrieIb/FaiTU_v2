@@ -1,9 +1,5 @@
 <resources>
     <string name="app_name">Fai tu!</string>
-    <string name="notification_sync_running">Sincronizzazione in corso…</string>
-    <string name="notification_sync_success">Sincronizzazione completata</string>
-    <string name="notification_sync_failure">Errore nella sincronizzazione</string>
-    <string name="notification_sync_failure_with_reason">Errore nella sincronizzazione: %1$s</string>
     <string name="dialog_reset_title">Cancella tutto</string>
     <string name="dialog_reset_body">Questa operazione rimuove proposte, ingredienti e lista della spesa. Vuoi continuare?</string>
     <string name="dialog_confirm">Conferma</string>

@@ -1,42 +1,62 @@
-# Menu Planner App
+# Fai tu! – Firestore Menu Planner
 
-Android app + Google Apps Script backend for two people to coordinate the weekly menu, list the needed ingredients, and share a shopping list. The app reads and writes a shared spreadsheet: every time one person edits a meal or toggles an ingredient, the other device sees the change after a quick refresh.
+Jetpack Compose Android app backed by Firebase (Firestore + anonymous Auth) to plan the weekly menu together, keep ingredients in sync, and share a shopping list in real time. The Google Sheets + Apps Script stack is gone—Firestore is now the single source of truth.
 
 ## What you can do
 
-- Propose lunches and dinners for specific days.
-- Attach the ingredients required for each proposal and flag what still needs to be bought.
-- See a shared shopping list automatically generated from the “need to buy” flags and clear items as you grab them.
-- Edit or delete proposals and ingredients directly from the phones—no more manual sheet edits.
+- Propose lunches and dinners for specific days and slots.
+- Attach ingredients, mark what still needs to be bought, and see the shopping list update instantly on both phones.
+- Add ad-hoc shopping notes, mark items as purchased, or clear the menu entirely when you want to start fresh.
+- Share access securely through a six-character invite code tied to your private household in Firestore.
 
 ## Repository layout
 
 ```
-android-app/           # Jetpack Compose client; configuration is embedded in AppSecrets
-apps-script/           # Google Apps Script backend (Code.gs)
-docs/                  # Setup guides and data schema
-sheets-template/       # CSV headers for the three tabs (MenuPlan, MenuIngredients, ShoppingList)
+android-app/           # Jetpack Compose client, Firebase-backed
+docs/                  # Firestore setup, data model, release notes
+functions/             # Optional Cloud Functions to keep shopping entries in sync
+sheets-template/       # Legacy CSV templates, retained for historical reference only
 ```
 
-## Setup in five steps
+## Prerequisites
 
-1. **Spreadsheet** – Create a Google Sheet with three tabs: `MenuPlan`, `MenuIngredients`, `ShoppingList`. Import the CSV files from `sheets-template/` so the headers match exactly.
-2. **Apps Script** – In Sheets choose *Extensions → Apps Script*, paste `apps-script/Code.gs`, save, set the script property `MENU_API_TOKEN`, and deploy it as a Web App (`Execute as: Me`, `Access: Anyone with the link`). See `docs/apps-script-setup.md` for screenshots.
-3. **Embed the secrets** – Open `android-app/app/src/main/java/com/menumanager/AppSecrets.kt`, replace the placeholders with the Web App `/exec` URL and the token from step 2.
-4. **Build the APK** – From `android-app/` run `.\gradlew.bat assembleDebug` (or use Android Studio). The debug APK appears under `android-app/app/build/outputs/apk/debug/`.
-5. **Install & sync** – Install the APK on both phones (ADB, Android Studio, or file transfer). The app starts directly on the shared menu; tap **Aggiorna** to sync with the sheet.
+- Android Studio Jellyfish (or newer) with Android SDK 34.
+- Firebase project with Firestore (Native mode) and Anonymous Authentication enabled.
+- `google-services.json` downloaded for package `com.menumanager` and placed under `android-app/app/`.
 
-## Daily workflow
+See `docs/firebase-backend-setup.md` for the full Firebase walkthrough (Auth, Firestore rules, optional Cloud Functions).
 
-- Add a meal proposal with date, slot (Pranzo/Cena), and optional notes.
-- Add ingredients under each proposal; tap “Segna da comprare” to push them to the joint shopping list.
-- While shopping, mark an ingredient “Segna come acquistato” to remove it from the list (the corresponding ingredient flag switches to *Ce l’abbiamo*).
-- Use the refresh button whenever you want to pull the latest state from the sheet.
+## Build & run
 
-## Docs
+```powershell
+cd "android-app"
+.\gradlew.bat assembleDebug
+```
 
-- `docs/apps-script-setup.md` – deploy & link the Apps Script web app.
-- `docs/data-schema.md` – reference for the three tabs and automatic shopping list regeneration.
-- `docs/session-log-2025-10-12.md` – summary of this development session and implemented features.
+Install the generated APK from `android-app/app/build/outputs/apk/debug/` via `adb install`, Android Studio, or file transfer.
 
-No Google Cloud project, Firestore, or authentication SDK is required—just a shared spreadsheet, an Apps Script deployment, and the embedded token.
+On first launch each device signs in anonymously, then you will:
+
+1. Create a new household (generates the invite code) **or** join an existing one by entering the code shared from another device.
+2. Start adding proposals and ingredients; everything syncs live through Firestore snapshot listeners.
+3. Share the invite code with new devices anytime from the settings card.
+
+## Data model
+
+Firestore layout: `households/{householdId}` keeps metadata (`inviteCode`, members) and nests three collections per household—`proposals`, `ingredients`, `shopping`. See `docs/data-schema.md` for the exact document shapes and how the client derives the shopping list from ingredients.
+
+## Documentation
+
+- `docs/firebase-backend-setup.md` – configure Firebase services and recommended security rules.
+- `docs/data-schema.md` – Firestore document schema and household structure.
+- `docs/firestore-security-rules.md` – copy/paste rules to keep households private.
+- `docs/session-log-2025-10-12.md` – latest development log.
+
+## Release checklist
+
+1. `.\gradlew.bat clean assembleRelease`
+2. Run instrumentation tests if you have a device/emulator: `.\gradlew.bat connectedDebugAndroidTest`
+3. Tag the commit: `git tag -a vX.Y.Z -m "Release notes"`
+4. Publish the APK or App Bundle through the Play Console (or deliver directly), update release notes, and push the tag.
+
+Happy planning! Firestore keeps both devices up to date—no manual refresh button required anymore.

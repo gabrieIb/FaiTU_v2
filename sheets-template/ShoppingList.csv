@@ -1,3 +1,1 @@
-shopping_id,ingredient_id,proposal_id,name,status,updated_at
-9c0d1e2f-aaaa-4a01-aaaa-123456789000,9c0d1e2f-aaaa-4a01-aaaa-123456789000,1a0a2c7e-1111-4f01-aaaa-123456789000,Basilico fresco,pending,2025-10-11T09:10:00Z
-5d6e7f80-cccc-4a03-cccc-123456789000,5d6e7f80-cccc-4a03-cccc-123456789000,2b1b3d8f-2222-4f02-bbbb-123456789000,Carote,pending,2025-10-11T09:12:00Z
+# Legacy Google Sheets template deprecated in Firestore release. File kept to avoid breaking docs history.

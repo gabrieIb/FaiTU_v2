@@ -1,6 +1,10 @@
+import com.google.gms.googleservices.GoogleServicesTask
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    // Firebase Google Services plugin for analytics, crashlytics etc.
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -24,12 +28,17 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Use the default debug keystore so we can ship a generically signed artifact.
+            signingConfig = signingConfigs.getByName("debug")
         }
         debug {
-            applicationIdSuffix = ".debug"
+            // applicationIdSuffix rimosso per compatibilità con google-services.json
+            // applicationIdSuffix = ".debug"
         }
     }
 
+    // NOTE: AGP 8.x supporta attualmente JDK 17 per il build. Restiamo su 17 anche se il runtime desiderato sarebbe 21.
+    // Quando AGP dichiarerà compatibilità con JDK 21 potremo alzare questi valori.
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -72,10 +81,16 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.7.0")
     implementation("androidx.compose.runtime:runtime-livedata")
-    implementation("androidx.work:work-runtime-ktx:2.9.0")
+    implementation("androidx.datastore:datastore-preferences:1.1.0")
 
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    // Firebase BoM per versioni allineate.
+    implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
+    // Servizi base (Auth anon/email) - opzionale se usiamo solo Firestore pubblico protetto da regole.
+    implementation("com.google.firebase:firebase-auth-ktx")
+    // Firestore per dati realtime con snapshot listener
+    implementation("com.google.firebase:firebase-firestore-ktx")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
@@ -84,3 +99,8 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
+
+    // Workaround per cartelle OneDrive: evita che il task fallisca quando i file generati sono reparse point
+    tasks.withType<GoogleServicesTask>().configureEach {
+        doNotTrackState("OneDrive può marcare i file generati come reparse point e impedirne lo snapshot")
+    }

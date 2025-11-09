@@ -1,9 +1,10 @@
 package com.menumanager
 
 import android.content.Context
-import com.menumanager.data.MenuApiClient
-import com.menumanager.data.MenuCache
+import com.menumanager.data.HouseholdRepository
 import com.menumanager.data.MenuRepository
+import com.google.firebase.FirebaseApp
+import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.CoroutineScope
 
 /**
@@ -13,12 +14,22 @@ class ServiceLocator(
     context: Context,
     scope: CoroutineScope
 ) {
-    private val apiClient = MenuApiClient(
-        baseUrl = AppSecrets.BASE_URL,
-        token = AppSecrets.API_TOKEN
+    // Inizializzazione Firebase (idempotente)
+    private val firebaseApp by lazy { FirebaseApp.initializeApp(context) ?: FirebaseApp.getInstance() }
+    private val firestore by lazy { FirebaseFirestore.getInstance() }
+
+    init {
+        firebaseApp // Force init so Firestore is configured before repositories
+    }
+
+    // HouseholdRepository per gestire la famiglia
+    val householdRepository: HouseholdRepository by lazy {
+        HouseholdRepository(context.applicationContext)
+    }
+
+    val menuRepository: MenuRepository = MenuRepository(
+        firestore = firestore,
+        householdRepository = householdRepository,
+        scope = scope
     )
-
-    private val cache = MenuCache(context = context.applicationContext)
-
-    val menuRepository: MenuRepository = MenuRepository(apiClient, cache, scope)
 }

@@ -1,14 +1,9 @@
 package com.menumanager
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.viewModels
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,12 +28,13 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.DeleteSweep
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.outlined.Fastfood
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.automirrored.outlined.ListAlt
+import androidx.compose.material.icons.outlined.Fastfood
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -74,15 +70,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -94,11 +90,11 @@ import com.menumanager.data.model.MealProposal
 import com.menumanager.data.model.ShoppingEntry
 import com.menumanager.ui.MenuViewModel
 import com.menumanager.ui.MenuViewModelFactory
+import com.menumanager.ui.HouseholdViewModel
+import com.menumanager.ui.HouseholdViewModelFactory
+import com.menumanager.ui.HouseholdSetupScreen
+import com.menumanager.ui.HouseholdState
 import com.menumanager.ui.theme.MenuManagerTheme
-import com.menumanager.sync.SyncScheduler
-import androidx.core.content.ContextCompat
-import androidx.work.WorkInfo
-import androidx.work.WorkManager
 import kotlinx.coroutines.delay
 import java.util.Locale
 
@@ -108,40 +104,69 @@ class MainActivity : ComponentActivity() {
         MenuViewModelFactory(app.container.menuRepository)
     }
 
+    private val householdViewModel: HouseholdViewModel by viewModels {
+        val app = application as MenuManagerApp
+        HouseholdViewModelFactory(app.container.householdRepository)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             MenuManagerTheme {
                 Surface(color = MaterialTheme.colorScheme.background) {
-                    MenuApp(viewModel)
+                    MenuAppRoot(viewModel, householdViewModel)
                 }
             }
         }
     }
 }
 
+@Composable
+fun MenuAppRoot(menuViewModel: MenuViewModel, householdViewModel: HouseholdViewModel) {
+    val householdState by householdViewModel.state.collectAsStateWithLifecycle()
+
+    when (householdState) {
+        is HouseholdState.Loading,
+        is HouseholdState.NeedsSetup,
+        is HouseholdState.Creating,
+        is HouseholdState.Joining,
+        is HouseholdState.Error -> {
+            HouseholdSetupScreen(
+                state = householdState,
+                onCreateHousehold = { householdViewModel.createHousehold() },
+                onJoinHousehold = { code -> householdViewModel.joinHousehold(code) },
+                onDismissError = { householdViewModel.dismissError() }
+            )
+        }
+        is HouseholdState.Ready -> {
+            val readyState = householdState as HouseholdState.Ready
+            MenuApp(
+                viewModel = menuViewModel,
+                householdViewModel = householdViewModel,
+                householdId = readyState.householdId,
+                householdInviteCode = readyState.inviteCode
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun MenuApp(viewModel: MenuViewModel) {
+fun MenuApp(
+    viewModel: MenuViewModel,
+    householdViewModel: HouseholdViewModel,
+    householdId: String,
+    householdInviteCode: String? = null
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var selectedTab by rememberSaveable { mutableStateOf(0) }
-    val hasPending by viewModel.hasPending.collectAsStateWithLifecycle()
     var showProposalWizard by remember { mutableStateOf(false) }
     var showShoppingDialog by remember { mutableStateOf(false) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
     var showResetDialog by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var statusIsError by remember { mutableStateOf(false) }
-    val context = LocalContext.current
     val hapticFeedback = LocalHapticFeedback.current
-    val workInfosLiveData = remember(context) {
-        WorkManager.getInstance(context).getWorkInfosForUniqueWorkLiveData(SyncScheduler.UNIQUE_WORK_NAME)
-    }
-    val syncWorkInfos by workInfosLiveData.observeAsState(emptyList())
-    val currentSyncState = syncWorkInfos.firstOrNull()?.state
-    val isSyncActive = currentSyncState == WorkInfo.State.RUNNING ||
-        currentSyncState == WorkInfo.State.ENQUEUED ||
-        currentSyncState == WorkInfo.State.BLOCKED
-    var lastReportedSyncState by remember { mutableStateOf<WorkInfo.State?>(null) }
 
     fun emitStatus(message: String, isError: Boolean = false, triggerHaptic: Boolean = false) {
         statusMessage = message
@@ -164,85 +189,37 @@ fun MenuApp(viewModel: MenuViewModel) {
         }
     }
 
-    fun triggerSync() {
-        SyncScheduler.enqueue(context, triggeredByUser = true)
-        emitStatus("Sincronizzazione avviata…")
-    }
-
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
-            triggerSync()
-        } else {
-            emitStatus("Attiva le notifiche per vedere lo stato della sincronizzazione", isError = true)
-        }
-    }
-
     LaunchedEffect(Unit) {
         viewModel.refresh()
     }
 
-    LaunchedEffect(statusMessage, isSyncActive) {
-        if (statusMessage != null && !isSyncActive) {
+    LaunchedEffect(statusMessage) {
+        if (statusMessage != null) {
             delay(2500)
             statusMessage = null
             statusIsError = false
         }
     }
 
-    LaunchedEffect(currentSyncState) {
-        if (currentSyncState == lastReportedSyncState) {
-            return@LaunchedEffect
-        }
-        when (currentSyncState) {
-            WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> emitStatus("Sincronizzazione in attesa…")
-            WorkInfo.State.RUNNING -> emitStatus("Sincronizzazione in corso…")
-            WorkInfo.State.SUCCEEDED -> emitStatus("Sincronizzazione completata", triggerHaptic = true)
-            WorkInfo.State.FAILED -> emitStatus("Errore durante la sincronizzazione", isError = true, triggerHaptic = true)
-            WorkInfo.State.CANCELLED -> emitStatus("Sincronizzazione annullata", isError = true)
-            else -> Unit
-        }
-        lastReportedSyncState = currentSyncState
-    }
-
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(text = "Fai tu!") },
-                actions = {
-                    IconButton(onClick = { showResetDialog = true }) {
-                        Icon(imageVector = Icons.Filled.DeleteSweep, contentDescription = "Cancella tutto")
-                    }
-                    TextButton(
-                        enabled = !isSyncActive,
-                        onClick = {
-                            if (
-                                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-                            ) {
-                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                            } else {
-                                triggerSync()
-                            }
+            Column {
+                TopAppBar(
+                    title = { Text(text = "Fai tu!") },
+                    actions = {
+                        IconButton(onClick = { showSettingsDialog = true }) {
+                            Icon(imageVector = Icons.Filled.Settings, contentDescription = "Impostazioni")
                         }
-                    ) {
-                        Icon(imageVector = Icons.Filled.Refresh, contentDescription = null)
-                        Spacer(modifier = Modifier.size(6.dp))
-                        Text(
-                            when {
-                                isSyncActive -> "Sincronizzo…"
-                                hasPending -> "Sincronizza*"
-                                else -> "Sincronizza"
-                            }
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                        IconButton(onClick = { showResetDialog = true }) {
+                            Icon(imageVector = Icons.Filled.DeleteSweep, contentDescription = "Cancella tutto")
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        titleContentColor = MaterialTheme.colorScheme.onSurface
+                    )
                 )
-            )
+            }
         },
         bottomBar = {
             NavigationBar {
@@ -357,6 +334,23 @@ fun MenuApp(viewModel: MenuViewModel) {
         }
     }
 
+    if (showSettingsDialog) {
+        HouseholdSettingsDialog(
+            currentHouseholdId = householdId,
+            inviteCode = householdInviteCode,
+            onDismiss = { showSettingsDialog = false },
+            onSave = { newId, onComplete ->
+                val handler = buildResultHandler("Famiglia aggiornata", onSuccess = {
+                    showSettingsDialog = false
+                })
+                householdViewModel.overrideHouseholdId(newId) { error ->
+                    handler(error)
+                    onComplete(error)
+                }
+            }
+        )
+    }
+
     if (showProposalWizard) {
         ProposalWizardDialog(
             onDismiss = { showProposalWizard = false },
@@ -469,7 +463,10 @@ private fun MenuTab(
     var ingredientDraft by remember { mutableStateOf<IngredientDraft?>(null) }
     var editingIngredient by remember { mutableStateOf<MealIngredient?>(null) }
     var ingredientProposalId by remember { mutableStateOf<String?>(null) }
+    // Sub-tab: Tutto / Pranzi / Cene
     var selectedFilter by rememberSaveable { mutableStateOf(MealFilter.All.name) }
+    // Se utente è su tab "Pranzi" o "Cene" e apre un dettaglio
+    var detailProposal by remember { mutableStateOf<MealProposal?>(null) }
 
     Column(
         modifier = Modifier
@@ -488,58 +485,98 @@ private fun MenuTab(
             ) { CircularProgressIndicator() }
             is Loadable.Error -> Text("Errore: ${state.throwable.message}", modifier = Modifier.fillMaxWidth())
             is Loadable.Ready -> {
-                FilterRow(
-                    active = MealFilter.valueOf(selectedFilter),
-                    onSelected = { selectedFilter = it.name }
-                )
-                val grouped = remember(state.data) {
-                    state.data.proposals.map { proposal ->
-                        ProposalWithIngredients(
-                            proposal = proposal,
-                            ingredients = state.data.ingredients.filter { it.proposalId == proposal.proposalId }
-                        )
-                    }
-                }
-                val filtered = remember(grouped, selectedFilter) {
-                    val filter = MealFilter.valueOf(selectedFilter)
-                    when (filter) {
-                        MealFilter.All -> grouped
-                        MealFilter.Pranzo -> grouped.filter { it.proposal.mealSlot.equals("Pranzo", ignoreCase = true) }
-                        MealFilter.Cena -> grouped.filter { it.proposal.mealSlot.equals("Cena", ignoreCase = true) }
-                    }
-                }
-                if (filtered.isEmpty()) {
-                    Text("Non c'è nulla in programma: premi “Nuova proposta” per iniziare.", fontWeight = FontWeight.SemiBold)
+                // Se siamo in dettaglio mostra schermo dettaglio singola proposta
+                val filterEnum = MealFilter.valueOf(selectedFilter)
+                if (detailProposal != null && filterEnum != MealFilter.All) {
+                    ProposalDetailScreen(
+                        proposal = detailProposal!!,
+                        ingredients = state.data.ingredients.filter { it.proposalId == detailProposal!!.proposalId },
+                        onBack = { detailProposal = null },
+                        onEdit = { p ->
+                            editingProposal = p
+                            proposalDraft = ProposalDraft(mealSlot = p.mealSlot, title = p.title, notes = p.notes)
+                        },
+                        onDelete = onDeleteProposal,
+                        onAddIngredient = { pid ->
+                            ingredientProposalId = pid
+                            editingIngredient = null
+                            ingredientDraft = IngredientDraft()
+                        },
+                        onEditIngredient = { ingredient ->
+                            editingIngredient = ingredient
+                            ingredientProposalId = ingredient.proposalId
+                            ingredientDraft = IngredientDraft(name = ingredient.name, needToBuy = ingredient.needToBuy)
+                        },
+                        onToggleIngredient = onToggleIngredient,
+                        onDeleteIngredient = onDeleteIngredient
+                    )
                 } else {
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        items(filtered, key = { it.proposal.proposalId }) { item ->
-                            ProposalCard(
-                                item = item,
-                                onEdit = { proposal ->
-                                    editingProposal = proposal
-                                    proposalDraft = ProposalDraft(
-                                        mealSlot = proposal.mealSlot,
-                                        title = proposal.title,
-                                        notes = proposal.notes
-                                    )
-                                },
-                                onDelete = onDeleteProposal,
-                                onAddIngredient = { proposalId ->
-                                    ingredientProposalId = proposalId
-                                    editingIngredient = null
-                                    ingredientDraft = IngredientDraft()
-                                },
-                                onEditIngredient = { ingredient ->
-                                    editingIngredient = ingredient
-                                    ingredientProposalId = ingredient.proposalId
-                                    ingredientDraft = IngredientDraft(
-                                        name = ingredient.name,
-                                        needToBuy = ingredient.needToBuy
-                                    )
-                                },
-                                onToggleIngredient = onToggleIngredient,
-                                onDeleteIngredient = onDeleteIngredient
+                    FilterRow(
+                        active = filterEnum,
+                        onSelected = {
+                            selectedFilter = it.name
+                            // reset detail all cambio tab
+                            detailProposal = null
+                        }
+                    )
+                    val grouped = remember(state.data) {
+                        state.data.proposals.map { proposal ->
+                            ProposalWithIngredients(
+                                proposal = proposal,
+                                ingredients = state.data.ingredients.filter { it.proposalId == proposal.proposalId }
                             )
+                        }
+                    }
+                    val filtered = remember(grouped, selectedFilter) {
+                        when (filterEnum) {
+                            MealFilter.All -> grouped
+                            MealFilter.Pranzo -> grouped.filter { it.proposal.mealSlot.equals("Pranzo", ignoreCase = true) }
+                            MealFilter.Cena -> grouped.filter { it.proposal.mealSlot.equals("Cena", ignoreCase = true) }
+                        }
+                    }
+                    if (filtered.isEmpty()) {
+                        Text("Non c'è nulla in programma: premi “Nuova proposta” per iniziare.", fontWeight = FontWeight.SemiBold)
+                    } else {
+                        LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            items(filtered, key = { it.proposal.proposalId }) { item ->
+                                if (filterEnum == MealFilter.All) {
+                                    // Vista completa con ingredienti
+                                    ProposalCard(
+                                        item = item,
+                                        onEdit = { proposal ->
+                                            editingProposal = proposal
+                                            proposalDraft = ProposalDraft(
+                                                mealSlot = proposal.mealSlot,
+                                                title = proposal.title,
+                                                notes = proposal.notes
+                                            )
+                                        },
+                                        onDelete = onDeleteProposal,
+                                        onAddIngredient = { proposalId ->
+                                            ingredientProposalId = proposalId
+                                            editingIngredient = null
+                                            ingredientDraft = IngredientDraft()
+                                        },
+                                        onEditIngredient = { ingredient ->
+                                            editingIngredient = ingredient
+                                            ingredientProposalId = ingredient.proposalId
+                                            ingredientDraft = IngredientDraft(
+                                                name = ingredient.name,
+                                                needToBuy = ingredient.needToBuy
+                                            )
+                                        },
+                                        onToggleIngredient = onToggleIngredient,
+                                        onDeleteIngredient = onDeleteIngredient
+                                    )
+                                } else {
+                                    // Vista lista semplice: solo card minimale cliccabile
+                                    SimpleProposalRow(
+                                        proposal = item.proposal,
+                                        onOpen = { detailProposal = it },
+                                        onDelete = onDeleteProposal
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -666,6 +703,90 @@ private fun ProposalCard(
 }
 
 @Composable
+private fun SimpleProposalRow(
+    proposal: MealProposal,
+    onOpen: (MealProposal) -> Unit,
+    onDelete: (MealProposal) -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = proposal.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = proposal.mealSlot,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            TextButton(onClick = { onOpen(proposal) }) { Text("Apri") }
+            IconButton(onClick = { onDelete(proposal) }) { Icon(Icons.Filled.Delete, contentDescription = "Elimina") }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ProposalDetailScreen(
+    proposal: MealProposal,
+    ingredients: List<MealIngredient>,
+    onBack: () -> Unit,
+    onEdit: (MealProposal) -> Unit,
+    onDelete: (MealProposal) -> Unit,
+    onAddIngredient: (String) -> Unit,
+    onEditIngredient: (MealIngredient) -> Unit,
+    onToggleIngredient: (MealIngredient, Boolean) -> Unit,
+    onDeleteIngredient: (MealIngredient) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Button(onClick = onBack) { Text("Indietro") }
+            Text(proposal.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        }
+        Text(proposal.mealSlot.uppercase(Locale.getDefault()), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        if (proposal.notes.isNotBlank()) {
+            Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
+                Text(proposal.notes, modifier = Modifier.padding(12.dp))
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            TextButton(onClick = { onEdit(proposal) }) { Text("Modifica") }
+            TextButton(onClick = { onDelete(proposal) }) { Text("Elimina") }
+            TextButton(onClick = { onAddIngredient(proposal.proposalId) }) { Text("Ingrediente") }
+        }
+        Text("Ingredienti", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        if (ingredients.isEmpty()) {
+            Text("Nessun ingrediente ancora")
+        } else {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ingredients.forEach { ingredient ->
+                    IngredientPill(
+                        ingredient = ingredient,
+                        onToggle = onToggleIngredient,
+                        onEdit = onEditIngredient,
+                        onDelete = onDeleteIngredient
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun IngredientPill(
     ingredient: MealIngredient,
     onToggle: (MealIngredient, Boolean) -> Unit,
@@ -730,6 +851,84 @@ private fun ProposalDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Annulla") }
+        }
+    )
+}
+
+@Composable
+private fun HouseholdSettingsDialog(
+    currentHouseholdId: String,
+    inviteCode: String?,
+    onDismiss: () -> Unit,
+    onSave: (String, (Throwable?) -> Unit) -> Unit
+) {
+    var householdId by remember(currentHouseholdId) { mutableStateOf(currentHouseholdId) }
+    var isSaving by remember { mutableStateOf(false) }
+    val clipboard = LocalClipboardManager.current
+
+    AlertDialog(
+        onDismissRequest = {
+            if (!isSaving) {
+                onDismiss()
+            }
+        },
+        title = { Text("Impostazioni") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("ID", style = MaterialTheme.typography.labelMedium)
+                TextField(
+                    value = householdId,
+                    onValueChange = { householdId = it },
+                    label = { Text("ID") },
+                    singleLine = true
+                )
+                inviteCode?.let { code ->
+                    Text("Codice invito", style = MaterialTheme.typography.labelMedium)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = code,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        IconButton(onClick = { clipboard.setText(AnnotatedString(code)) }) {
+                            Icon(imageVector = Icons.Filled.ContentCopy, contentDescription = "Copia codice invito")
+                        }
+                    }
+                    Text("Condividi questo codice con chi deve unirsi al gruppo.", style = MaterialTheme.typography.bodySmall)
+                } ?: Text("Nessun codice invito disponibile per questo gruppo.", style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = {
+            val trimmedId = householdId.trim()
+            Button(
+                onClick = {
+                    isSaving = true
+                    onSave(trimmedId) { error ->
+                        isSaving = false
+                        if (error == null) {
+                            householdId = trimmedId
+                        }
+                    }
+                },
+                enabled = trimmedId.isNotEmpty() && !isSaving
+            ) {
+                if (isSaving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text("Salva")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { if (!isSaving) onDismiss() }, enabled = !isSaving) {
+                Text("Chiudi")
+            }
         }
     )
 }

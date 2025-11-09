@@ -19,7 +19,6 @@ class MenuViewModel(private val repository: MenuRepository) : ViewModel() {
         started = SharingStarted.Eagerly,
         initialValue = Loadable.Idle
     )
-    val hasPending: StateFlow<Boolean> = repository.hasPending
 
     fun refresh() {
         repository.refresh()
@@ -251,14 +250,6 @@ class MenuViewModel(private val repository: MenuRepository) : ViewModel() {
             runCatching {
                 repository.resetAll()
             }.onSuccess { onResult(null) }
-                .onFailure { onResult(it) }
-        }
-    }
-
-    fun sync(onResult: (Throwable?) -> Unit) {
-        viewModelScope.launch {
-            repository.syncPending()
-                .onSuccess { onResult(null) }
                 .onFailure { onResult(it) }
         }
     }
