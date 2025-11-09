@@ -1,67 +1,60 @@
-# Regole di sicurezza Firestore (household-based)
+# Firestore security rules (household-based)
 
-Questo file contiene le regole da applicare in Firebase console → Firestore Database → Rules.
+Apply these rules in Firebase console > Firestore Database > Rules after enabling Anonymous Auth. They require each caller to be authenticated and to belong to the household whose documents they are touching.
 
-## Regole (copia/incolla in console)
+## Rules (copy/paste)
 
 ```
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Helper: verifica che l'utente autenticato sia membro della famiglia
+
     function isMemberOf(householdId) {
       return request.auth != null &&
              request.auth.uid in get(/databases/$(database)/documents/households/$(householdId)).data.members;
     }
 
-    // Household root: lettura/scrittura solo per membri
     match /households/{householdId} {
-      allow read: if isMemberOf(householdId);
-      allow write: if isMemberOf(householdId);
-      
-      // Sottocollezioni: proposals, ingredients, shopping
+      allow read, write: if isMemberOf(householdId);
+
       match /proposals/{proposalId} {
         allow read, write: if isMemberOf(householdId);
       }
-      
+
       match /ingredients/{ingredientId} {
         allow read, write: if isMemberOf(householdId);
       }
-      
+
       match /shopping/{shoppingId} {
         allow read, write: if isMemberOf(householdId);
       }
     }
-    
-    // Permetti a qualunque utente autenticato di creare una nuova famiglia
+
     match /households/{householdId} {
-      allow create: if request.auth != null && 
-                       request.auth.uid in request.resource.data.members;
+      allow create: if request.auth != null &&
+        request.auth.uid in request.resource.data.members;
     }
   }
 }
 ```
 
-## Note di sicurezza
+## Security notes
 
-- **Auth anonima obbligatoria**: le regole verificano `request.auth != null`, quindi ogni chiamata deve provenire da un utente autenticato (anche anonimo).
-- **Membership check**: `isMemberOf()` legge il documento household e verifica che l'uid corrente sia nella lista `members`.
-- **Join via app**: l'operazione di "join" (aggiungere un uid a `members`) è fatta tramite l'app client. Per massima sicurezza, si può spostare questa logica in una Cloud Function callable che valida il codice invito server-side.
+- Anonymous auth is still authentication. Ensure the Android app signs in before hitting Firestore; otherwise every request is rejected.
+- `isMemberOf` fetches the household document to confirm that the caller UID appears inside `members`. Firestore caches reads, so the extra lookup is inexpensive.
+- Joining a household happens client-side: the app queries by invite code and uses `FieldValue.arrayUnion(uid)`. For extra protection you can replicate this logic in a callable Cloud Function.
 
-## Test mode (solo sviluppo iniziale)
+## Temporary test mode (development only)
 
-Se vuoi iniziare senza autenticazione per testare velocemente, usa temporaneamente:
+Use the snippet below only during the very first setup. Switch back to the secure rules above before releasing or sharing builds.
 
 ```
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /{document=**} {
-      allow read, write: if true; // ATTENZIONE: aperto a tutti, solo per test!
+      allow read, write: if true; // open to the world, do not use in production
     }
   }
 }
 ```
-
-Poi passa alle regole sopra non appena abiliti l'auth anonima.
