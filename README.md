@@ -7,6 +7,7 @@ Jetpack Compose Android app backed by Firebase (Firestore plus Anonymous Auth) t
 - Real-time proposals, ingredients, and shopping entries scoped to a private household.
 - Anonymous Auth with invite codes so two devices can collaborate securely.
 - Compose-only UI backed by `MenuViewModel` and Flow streams from Firestore.
+- Filter tabs (`Proposte`, `Pranzi`, `Cene`) with cooked/pending toggles limited to meal-specific views.
 - Optional Cloud Functions keep the `shopping` collection aligned with ingredients, although the app can derive the combined list on-device.
 
 ## Repository layout

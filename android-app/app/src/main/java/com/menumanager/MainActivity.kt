@@ -478,7 +478,7 @@ private fun MenuTab(
     var ingredientDraft by remember { mutableStateOf<IngredientDraft?>(null) }
     var editingIngredient by remember { mutableStateOf<MealIngredient?>(null) }
     var ingredientProposalId by remember { mutableStateOf<String?>(null) }
-    // Sub-tab: Tutto / Pranzi / Cene
+    // Sub-tab: Proposte / Pranzi / Cene
     var selectedFilter by rememberSaveable { mutableStateOf(MealFilter.All.name) }
     // Se utente è su tab "Pranzi" o "Cene" e apre un dettaglio
     var detailProposal by remember { mutableStateOf<MealProposal?>(null) }
@@ -511,7 +511,7 @@ private fun MenuTab(
                             editingProposal = p
                             proposalDraft = ProposalDraft(mealSlot = p.mealSlot, title = p.title, notes = p.notes)
                         },
-                            onUpdateStatus = onUpdateProposalStatus,
+                        onUpdateStatus = onUpdateProposalStatus,
                         onDelete = onDeleteProposal,
                         onAddIngredient = { pid ->
                             ingredientProposalId = pid
@@ -550,6 +550,7 @@ private fun MenuTab(
                             MealFilter.Cena -> grouped.filter { it.proposal.mealSlot.equals("Cena", ignoreCase = true) }
                         }
                     }
+                    val showStatusToggle = filterEnum != MealFilter.All
                     if (filtered.isEmpty()) {
                         Text("Non c'è nulla in programma: premi “Nuova proposta” per iniziare.", fontWeight = FontWeight.SemiBold)
                     } else {
@@ -559,6 +560,7 @@ private fun MenuTab(
                                     // Vista completa con ingredienti
                                     ProposalCard(
                                         item = item,
+                                        showStatusToggle = showStatusToggle,
                                         onEdit = { proposal ->
                                             editingProposal = proposal
                                             proposalDraft = ProposalDraft(
@@ -652,6 +654,7 @@ private fun MenuTab(
 @Composable
 private fun ProposalCard(
     item: ProposalWithIngredients,
+    showStatusToggle: Boolean = true,
     onToggleStatus: (MealProposal, MealStatus) -> Unit,
     onEdit: (MealProposal) -> Unit,
     onDelete: (MealProposal) -> Unit,
@@ -681,11 +684,13 @@ private fun ProposalCard(
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
-                ProposalStatusButton(
-                    proposal = item.proposal,
-                    onStatusChange = { status -> onToggleStatus(item.proposal, status) }
-                )
-                Spacer(modifier = Modifier.size(8.dp))
+                if (showStatusToggle) {
+                    ProposalStatusButton(
+                        proposal = item.proposal,
+                        onStatusChange = { status -> onToggleStatus(item.proposal, status) }
+                    )
+                    Spacer(modifier = Modifier.size(8.dp))
+                }
                 TextButton(onClick = { onAddIngredient(item.proposal.proposalId) }) {
                     Icon(imageVector = Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.size(4.dp))
@@ -1152,7 +1157,7 @@ private fun FilterRow(active: MealFilter, onSelected: (MealFilter) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
         MealFilter.values().forEach { filter ->
             val label = when (filter) {
-                MealFilter.All -> "Tutto"
+                MealFilter.All -> "Proposte"
                 MealFilter.Pranzo -> "Pranzi"
                 MealFilter.Cena -> "Cene"
             }

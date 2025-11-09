@@ -33,6 +33,7 @@ This document records the migration path from Google Sheets + Apps Script to Fir
 5. **Update UI + cache**
    - MenuViewModel listens to Firestore streams and merges manual shopping entries with derived ones from ingredients marked `needToBuy = true`.
    - MenuCache keeps the latest snapshot used by Compose screens.
+   - The filter row exposes `Proposte`, `Pranzi`, `Cene`; cooked/pending toggles appear only on meal-specific tabs.
 6. **Optional Cloud Functions**
    - Functions under `functions/` mirror ingredient changes into the shopping collection and expose a callable join helper.
    - Deployment commands documented in docs/firebase-backend-setup.md.
