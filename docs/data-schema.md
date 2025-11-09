@@ -21,6 +21,7 @@ The app now uses Firebase Firestore as the single source of truth. Each househol
 | `createdBy` | string | Friendly author label. |
 | `createdAt` | string | ISO timestamp from `MenuRepository.nowIso()`. |
 | `updatedAt` | string | ISO timestamp updated on every change. |
+| `status` | string | Either `pending` (default) or `cooked`, used to track completed meals. |
 
 ### Subcollection: `ingredients`
 

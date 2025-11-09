@@ -4,6 +4,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.menumanager.data.model.ApiState
 import com.menumanager.data.model.MealIngredient
 import com.menumanager.data.model.MealProposal
+import com.menumanager.data.model.MealStatus
 import com.menumanager.data.model.ShoppingEntry
 import com.menumanager.data.remote.FirestoreMenuDataSource
 import com.menumanager.data.remote.MenuRemoteDataSource
@@ -166,7 +167,8 @@ private fun RemoteProposal.toDomain(): MealProposal = MealProposal(
     notes = notes ?: "",
     createdBy = createdBy,
     createdAt = createdAt,
-    updatedAt = updatedAt
+    updatedAt = updatedAt,
+    status = MealStatus.fromRaw(status)
 )
 
 private fun RemoteIngredient.toDomain(): MealIngredient = MealIngredient(
@@ -202,7 +204,8 @@ private fun MealProposal.toRemote(): RemoteProposal = RemoteProposal(
     notes = notes.ifBlank { null },
     createdBy = createdBy,
     createdAt = createdAt,
-    updatedAt = updatedAt
+    updatedAt = updatedAt,
+    status = status.rawValue
 )
 
 private fun MealIngredient.toRemote(): RemoteIngredient = RemoteIngredient(

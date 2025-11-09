@@ -7,6 +7,7 @@ import com.menumanager.data.MenuRepository
 import com.menumanager.data.model.ApiState
 import com.menumanager.data.model.MealIngredient
 import com.menumanager.data.model.MealProposal
+import com.menumanager.data.model.MealStatus
 import com.menumanager.data.model.ShoppingEntry
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -38,7 +39,8 @@ class MenuViewModel(private val repository: MenuRepository) : ViewModel() {
             notes = notes,
             createdBy = DEFAULT_AUTHOR,
             createdAt = now,
-            updatedAt = now
+            updatedAt = now,
+            status = MealStatus.Pending
         )
         saveProposalInternal(proposal, onResult)
     }
@@ -59,7 +61,8 @@ class MenuViewModel(private val repository: MenuRepository) : ViewModel() {
             notes = notes,
             createdBy = DEFAULT_AUTHOR,
             createdAt = now,
-            updatedAt = now
+            updatedAt = now,
+            status = MealStatus.Pending
         )
         val ingredientModels = ingredients.map { (name, needToBuy) ->
             MealIngredient(
@@ -89,6 +92,18 @@ class MenuViewModel(private val repository: MenuRepository) : ViewModel() {
             mealSlot = mealSlot,
             title = title,
             notes = notes,
+            updatedAt = repository.nowIso()
+        )
+        saveProposalInternal(updated, onResult)
+    }
+
+    fun updateProposalStatus(
+        proposal: MealProposal,
+        status: MealStatus,
+        onResult: (Throwable?) -> Unit
+    ) {
+        val updated = proposal.copy(
+            status = status,
             updatedAt = repository.nowIso()
         )
         saveProposalInternal(updated, onResult)

@@ -1,178 +1,168 @@
 package com.menumanager.data.remote
 
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.Query
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 
-/**
- * Implementazione Firebase Firestore con schema household.
- * Struttura collezioni:
- *  - households/{householdId}/proposals/{proposalId}
- *  - households/{householdId}/ingredients/{ingredientId}
- *  - households/{householdId}/shopping/{shoppingId}
- * householdId viene passato al costruttore (recuperato da HouseholdRepository).
- */
+private const val HOUSEHOLDS_COLLECTION = "households"
+private const val PROPOSALS_COLLECTION = "proposals"
+private const val INGREDIENTS_COLLECTION = "ingredients"
+private const val SHOPPING_COLLECTION = "shopping"
+
 class FirestoreMenuDataSource(
-    private val db: FirebaseFirestore,
-    private val householdId: String
+	private val firestore: FirebaseFirestore,
+	private val householdId: String
 ) : MenuRemoteDataSource {
 
-    private val householdDoc get() = db.collection("households").document(householdId)
-    private val proposalsCol get() = householdDoc.collection("proposals")
-    private val ingredientsCol get() = householdDoc.collection("ingredients")
-    private val shoppingCol get() = householdDoc.collection("shopping")
+	private val householdRef
+		get() = firestore.collection(HOUSEHOLDS_COLLECTION).document(householdId)
 
-    override fun streamProposals(): Flow<List<RemoteProposal>> = callbackFlow {
-        val reg = proposalsCol.orderBy("updatedAt", Query.Direction.DESCENDING)
-            .addSnapshotListener { snap, err ->
-                if (err != null) {
-                    // In caso di errore, emettiamo lista vuota per non bloccare la UI
-                    trySend(emptyList())
-                    return@addSnapshotListener
-                }
-                val list = snap?.documents?.mapNotNull { doc ->
-                    doc.toRemoteProposal()
-                } ?: emptyList()
-                trySend(list)
-            }
-        awaitClose { reg.remove() }
-    }
+	private val proposalsRef
+		get() = householdRef.collection(PROPOSALS_COLLECTION)
 
-    override suspend fun upsertProposal(proposal: RemoteProposal) {
-        proposalsCol.document(proposal.proposalId).set(proposal.toMap()).await()
-    }
+	private val ingredientsRef
+		get() = householdRef.collection(INGREDIENTS_COLLECTION)
 
-    override suspend fun deleteProposal(proposalId: String) {
-        // Delete proposal and cascade delete ingredients linked to it
-        db.runBatch { batch ->
-            batch.delete(proposalsCol.document(proposalId))
-            // delete linked ingredients
-            // NOTE: query in batch only for IDs retrieval; actual deletes batched.
-        }.await()
-        // Firestore batch does not support query deletes; do a small follow-up
-        val ing = ingredientsCol.whereEqualTo("proposalId", proposalId).get().await()
-        db.runBatch { b ->
-            ing.documents.forEach { b.delete(it.reference) }
-        }.await()
-        val shopping = shoppingCol.whereEqualTo("proposalId", proposalId).get().await()
-        if (!shopping.isEmpty) {
-            db.runBatch { b ->
-                shopping.documents.forEach { b.delete(it.reference) }
-            }.await()
-        }
-    }
+	private val shoppingRef
+		get() = householdRef.collection(SHOPPING_COLLECTION)
 
-    override fun streamIngredients(): Flow<List<RemoteIngredient>> = callbackFlow {
-        val reg = ingredientsCol.addSnapshotListener { snap, err ->
-            if (err != null) {
-                trySend(emptyList())
-                return@addSnapshotListener
-            }
-            val list = snap?.documents?.mapNotNull { it.toRemoteIngredient() } ?: emptyList()
-            trySend(list)
-        }
-        awaitClose { reg.remove() }
-    }
+	override fun streamProposals(): Flow<List<RemoteProposal>> = callbackFlow {
+		val registration = proposalsRef.addSnapshotListener { snapshot, error ->
+			if (error != null) {
+				close(error)
+				return@addSnapshotListener
+			}
 
-    override suspend fun upsertIngredient(ingredient: RemoteIngredient) {
-        ingredientsCol.document(ingredient.ingredientId).set(ingredient.toMap()).await()
-    }
+			val items = snapshot?.documents?.mapNotNull { doc ->
+				val proposalId = doc.getString("proposalId") ?: doc.id
+				val mealSlot = doc.getString("mealSlot") ?: return@mapNotNull null
+				val title = doc.getString("title") ?: return@mapNotNull null
+				val createdBy = doc.getString("createdBy") ?: ""
+				val createdAt = doc.getString("createdAt") ?: return@mapNotNull null
+				val updatedAt = doc.getString("updatedAt") ?: createdAt
+				val status = doc.getString("status") ?: RemoteProposal.DEFAULT_STATUS
+				RemoteProposal(
+					proposalId = proposalId,
+					mealSlot = mealSlot,
+					title = title,
+					notes = doc.getString("notes"),
+					createdBy = createdBy,
+					createdAt = createdAt,
+					updatedAt = updatedAt,
+					status = status
+				)
+			} ?: emptyList()
 
-    override suspend fun deleteIngredient(ingredientId: String) {
-        ingredientsCol.document(ingredientId).delete().await()
-    }
+			trySend(items).isSuccess
+		}
 
-    override fun streamShopping(): Flow<List<RemoteShoppingItem>> = callbackFlow {
-        val reg = shoppingCol.addSnapshotListener { snap, err ->
-            if (err != null) {
-                trySend(emptyList())
-                return@addSnapshotListener
-            }
-            val list = snap?.documents?.mapNotNull { it.toRemoteShopping() } ?: emptyList()
-            trySend(list)
-        }
-        awaitClose { reg.remove() }
-    }
+		awaitClose { registration.remove() }
+	}
 
-    override suspend fun upsertShoppingItem(item: RemoteShoppingItem) {
-        shoppingCol.document(item.shoppingId).set(item.toMap()).await()
-    }
+	override fun streamIngredients(): Flow<List<RemoteIngredient>> = callbackFlow {
+		val registration = ingredientsRef.addSnapshotListener { snapshot, error ->
+			if (error != null) {
+				close(error)
+				return@addSnapshotListener
+			}
 
-    override suspend fun deleteShoppingItem(shoppingId: String) {
-        shoppingCol.document(shoppingId).delete().await()
-    }
+			val items = snapshot?.documents?.mapNotNull { doc ->
+				val ingredientId = doc.getString("ingredientId") ?: doc.id
+				val proposalId = doc.getString("proposalId") ?: return@mapNotNull null
+				val name = doc.getString("name") ?: return@mapNotNull null
+				val needToBuy = doc.getBoolean("needToBuy") ?: false
+				val updatedAt = doc.getString("updatedAt") ?: return@mapNotNull null
+				RemoteIngredient(
+					ingredientId = ingredientId,
+					proposalId = proposalId,
+					name = name,
+					needToBuy = needToBuy,
+					updatedAt = updatedAt
+				)
+			} ?: emptyList()
+
+			trySend(items).isSuccess
+		}
+
+		awaitClose { registration.remove() }
+	}
+
+	override fun streamShopping(): Flow<List<RemoteShoppingItem>> = callbackFlow {
+		val registration = shoppingRef.addSnapshotListener { snapshot, error ->
+			if (error != null) {
+				close(error)
+				return@addSnapshotListener
+			}
+
+			val items = snapshot?.documents?.mapNotNull { doc ->
+				val shoppingId = doc.getString("shoppingId") ?: doc.id
+				val name = doc.getString("name") ?: return@mapNotNull null
+				val status = doc.getString("status") ?: "pending"
+				val updatedAt = doc.getString("updatedAt") ?: return@mapNotNull null
+				RemoteShoppingItem(
+					shoppingId = shoppingId,
+					ingredientId = doc.getString("ingredientId"),
+					proposalId = doc.getString("proposalId"),
+					name = name,
+					status = status,
+					updatedAt = updatedAt
+				)
+			} ?: emptyList()
+
+			trySend(items).isSuccess
+		}
+
+		awaitClose { registration.remove() }
+	}
+
+	override suspend fun upsertProposal(proposal: RemoteProposal) {
+		val payload = hashMapOf(
+			"proposalId" to proposal.proposalId,
+			"mealSlot" to proposal.mealSlot,
+			"title" to proposal.title,
+			"notes" to proposal.notes,
+			"createdBy" to proposal.createdBy,
+			"createdAt" to proposal.createdAt,
+			"updatedAt" to proposal.updatedAt,
+			"status" to proposal.status
+		)
+		proposalsRef.document(proposal.proposalId).set(payload).await()
+	}
+
+	override suspend fun deleteProposal(proposalId: String) {
+		proposalsRef.document(proposalId).delete().await()
+	}
+
+	override suspend fun upsertIngredient(ingredient: RemoteIngredient) {
+		val payload = hashMapOf(
+			"ingredientId" to ingredient.ingredientId,
+			"proposalId" to ingredient.proposalId,
+			"name" to ingredient.name,
+			"needToBuy" to ingredient.needToBuy,
+			"updatedAt" to ingredient.updatedAt
+		)
+		ingredientsRef.document(ingredient.ingredientId).set(payload).await()
+	}
+
+	override suspend fun deleteIngredient(ingredientId: String) {
+		ingredientsRef.document(ingredientId).delete().await()
+	}
+
+	override suspend fun upsertShoppingItem(item: RemoteShoppingItem) {
+		val payload = hashMapOf(
+			"shoppingId" to item.shoppingId,
+			"ingredientId" to item.ingredientId,
+			"proposalId" to item.proposalId,
+			"name" to item.name,
+			"status" to item.status,
+			"updatedAt" to item.updatedAt
+		)
+		shoppingRef.document(item.shoppingId).set(payload).await()
+	}
+
+	override suspend fun deleteShoppingItem(shoppingId: String) {
+		shoppingRef.document(shoppingId).delete().await()
+	}
 }
-
-// --- Mapping helpers ---
-
-private fun Map<String, Any?>.getString(key: String): String? = this[key] as? String
-private fun Map<String, Any?>.getBool(key: String): Boolean? = this[key] as? Boolean
-
-private fun com.google.firebase.firestore.DocumentSnapshot.toRemoteProposal(): RemoteProposal? {
-    val d = data ?: return null
-    val id = d.getString("proposalId") ?: id
-    return RemoteProposal(
-        proposalId = id,
-        mealSlot = d.getString("mealSlot") ?: return null,
-        title = d.getString("title") ?: return null,
-        notes = d.getString("notes"),
-        createdBy = d.getString("createdBy") ?: "app",
-        createdAt = d.getString("createdAt") ?: return null,
-        updatedAt = d.getString("updatedAt") ?: return null
-    )
-}
-
-private fun com.google.firebase.firestore.DocumentSnapshot.toRemoteIngredient(): RemoteIngredient? {
-    val d = data ?: return null
-    val id = d.getString("ingredientId") ?: id
-    return RemoteIngredient(
-        ingredientId = id,
-        proposalId = d.getString("proposalId") ?: return null,
-        name = d.getString("name") ?: return null,
-        needToBuy = d.getBool("needToBuy") ?: false,
-        updatedAt = d.getString("updatedAt") ?: return null
-    )
-}
-
-private fun com.google.firebase.firestore.DocumentSnapshot.toRemoteShopping(): RemoteShoppingItem? {
-    val d = data ?: return null
-    val id = d.getString("shoppingId") ?: id
-    return RemoteShoppingItem(
-        shoppingId = id,
-        ingredientId = d.getString("ingredientId"),
-        proposalId = d.getString("proposalId"),
-        name = d.getString("name") ?: return null,
-        status = d.getString("status") ?: "pending",
-        updatedAt = d.getString("updatedAt") ?: return null
-    )
-}
-
-private fun RemoteProposal.toMap() = mapOf(
-    "proposalId" to proposalId,
-    "mealSlot" to mealSlot,
-    "title" to title,
-    "notes" to notes,
-    "createdBy" to createdBy,
-    "createdAt" to createdAt,
-    "updatedAt" to updatedAt
-)
-
-private fun RemoteIngredient.toMap() = mapOf(
-    "ingredientId" to ingredientId,
-    "proposalId" to proposalId,
-    "name" to name,
-    "needToBuy" to needToBuy,
-    "updatedAt" to updatedAt
-)
-
-private fun RemoteShoppingItem.toMap() = mapOf(
-    "shoppingId" to shoppingId,
-    "ingredientId" to ingredientId,
-    "proposalId" to proposalId,
-    "name" to name,
-    "status" to status,
-    "updatedAt" to updatedAt
-)

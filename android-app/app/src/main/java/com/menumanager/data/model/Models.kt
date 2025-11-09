@@ -7,7 +7,8 @@ data class MealProposal(
     val notes: String,
     val createdBy: String,
     val createdAt: String,
-    val updatedAt: String
+    val updatedAt: String,
+    val status: MealStatus = MealStatus.Pending
 )
 
 data class MealIngredient(
@@ -35,3 +36,12 @@ data class ApiState(
     val ingredients: List<MealIngredient>,
     val shopping: List<ShoppingEntry>
 )
+
+enum class MealStatus(val rawValue: String) {
+    Pending("pending"),
+    Cooked("cooked");
+
+    companion object {
+        fun fromRaw(raw: String?): MealStatus = values().firstOrNull { it.rawValue == raw } ?: Pending
+    }
+}

@@ -68,7 +68,12 @@ The Android app listens to all three collections and builds derived UI models (s
 
 1. `cd android-app && .\gradlew.bat clean assembleRelease`
 2. Run `.\gradlew.bat connectedDebugAndroidTest` on a device or emulator.
-3. Tag the commit (`git tag -a vX.Y.Z -m "Release notes"`).
-4. Submit the artifact to the Play Console (or distribute directly) and push the tag.
+3. Copy the generated APK from `android-app/app/build/outputs/apk/release/app-release.apk` into `release/` with a meaningful filename (e.g. `FaiTu-release-YYYY-MM-DD.apk`).
+4. Tag the commit (`git tag -a vX.Y.Z -m "Release notes"`).
+5. Submit the artifact to the Play Console (or distribute directly) and push the tag.
+
+## Release artifacts
+
+- Latest generic-signed build: `release/FaiTu-release-2025-11-09.apk`
 
 Happy planning! Firestore keeps both devices in sync without any manual refresh.

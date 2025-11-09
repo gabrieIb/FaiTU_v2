@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
@@ -35,6 +36,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.automirrored.outlined.ListAlt
 import androidx.compose.material.icons.outlined.Fastfood
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -87,6 +89,7 @@ import com.menumanager.data.Loadable
 import com.menumanager.data.model.ApiState
 import com.menumanager.data.model.MealIngredient
 import com.menumanager.data.model.MealProposal
+import com.menumanager.data.model.MealStatus
 import com.menumanager.data.model.ShoppingEntry
 import com.menumanager.ui.MenuViewModel
 import com.menumanager.ui.MenuViewModelFactory
@@ -260,6 +263,17 @@ fun MenuApp(
             0 -> MenuTab(
                 padding = padding,
                 state = state,
+                onUpdateProposalStatus = { proposal, status ->
+                    val successMessage = if (status == MealStatus.Cooked) "Segnato come cucinato" else "Segnato in attesa"
+                    viewModel.updateProposalStatus(
+                        proposal = proposal,
+                        status = status,
+                        onResult = buildResultHandler(
+                            successMessage = successMessage,
+                            triggerHaptic = false
+                        )
+                    )
+                },
                 onCreateProposal = { draft, onSuccess ->
                     viewModel.createProposal(
                         mealSlot = draft.mealSlot,
@@ -450,6 +464,7 @@ data class IngredientDraft(
 private fun MenuTab(
     padding: PaddingValues,
     state: Loadable<ApiState>,
+    onUpdateProposalStatus: (MealProposal, MealStatus) -> Unit,
     onCreateProposal: (ProposalDraft, () -> Unit) -> Unit,
     onUpdateProposal: (MealProposal, ProposalDraft, () -> Unit) -> Unit,
     onDeleteProposal: (MealProposal) -> Unit,
@@ -496,6 +511,7 @@ private fun MenuTab(
                             editingProposal = p
                             proposalDraft = ProposalDraft(mealSlot = p.mealSlot, title = p.title, notes = p.notes)
                         },
+                            onUpdateStatus = onUpdateProposalStatus,
                         onDelete = onDeleteProposal,
                         onAddIngredient = { pid ->
                             ingredientProposalId = pid
@@ -551,6 +567,7 @@ private fun MenuTab(
                                                 notes = proposal.notes
                                             )
                                         },
+                                        onToggleStatus = onUpdateProposalStatus,
                                         onDelete = onDeleteProposal,
                                         onAddIngredient = { proposalId ->
                                             ingredientProposalId = proposalId
@@ -572,6 +589,7 @@ private fun MenuTab(
                                     // Vista lista semplice: solo card minimale cliccabile
                                     SimpleProposalRow(
                                         proposal = item.proposal,
+                                        onToggleStatus = onUpdateProposalStatus,
                                         onOpen = { detailProposal = it },
                                         onDelete = onDeleteProposal
                                     )
@@ -634,6 +652,7 @@ private fun MenuTab(
 @Composable
 private fun ProposalCard(
     item: ProposalWithIngredients,
+    onToggleStatus: (MealProposal, MealStatus) -> Unit,
     onEdit: (MealProposal) -> Unit,
     onDelete: (MealProposal) -> Unit,
     onAddIngredient: (String) -> Unit,
@@ -662,6 +681,11 @@ private fun ProposalCard(
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
+                ProposalStatusButton(
+                    proposal = item.proposal,
+                    onStatusChange = { status -> onToggleStatus(item.proposal, status) }
+                )
+                Spacer(modifier = Modifier.size(8.dp))
                 TextButton(onClick = { onAddIngredient(item.proposal.proposalId) }) {
                     Icon(imageVector = Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.size(4.dp))
@@ -703,8 +727,31 @@ private fun ProposalCard(
 }
 
 @Composable
+private fun ProposalStatusButton(
+    proposal: MealProposal,
+    onStatusChange: (MealStatus) -> Unit
+) {
+    val isCooked = proposal.status == MealStatus.Cooked
+    val nextStatus = if (isCooked) MealStatus.Pending else MealStatus.Cooked
+    FilledTonalButton(
+        onClick = { onStatusChange(nextStatus) },
+        colors = ButtonDefaults.filledTonalButtonColors(
+            containerColor = if (isCooked) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Icon(
+            imageVector = if (isCooked) Icons.Filled.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
+            contentDescription = if (isCooked) "Segna come in attesa" else "Segna come cucinato"
+        )
+        Spacer(modifier = Modifier.size(6.dp))
+        Text(if (isCooked) "Cucinato" else "In attesa")
+    }
+}
+
+@Composable
 private fun SimpleProposalRow(
     proposal: MealProposal,
+    onToggleStatus: (MealProposal, MealStatus) -> Unit,
     onOpen: (MealProposal) -> Unit,
     onDelete: (MealProposal) -> Unit
 ) {
@@ -733,9 +780,29 @@ private fun SimpleProposalRow(
                     color = MaterialTheme.colorScheme.primary
                 )
             }
+            ProposalStatusIcon(
+                proposal = proposal,
+                onStatusChange = { status -> onToggleStatus(proposal, status) }
+            )
             TextButton(onClick = { onOpen(proposal) }) { Text("Apri") }
             IconButton(onClick = { onDelete(proposal) }) { Icon(Icons.Filled.Delete, contentDescription = "Elimina") }
         }
+    }
+}
+
+@Composable
+private fun ProposalStatusIcon(
+    proposal: MealProposal,
+    onStatusChange: (MealStatus) -> Unit
+) {
+    val isCooked = proposal.status == MealStatus.Cooked
+    val nextStatus = if (isCooked) MealStatus.Pending else MealStatus.Cooked
+    IconButton(onClick = { onStatusChange(nextStatus) }) {
+        Icon(
+            imageVector = if (isCooked) Icons.Filled.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
+            contentDescription = if (isCooked) "Segna come in attesa" else "Segna come cucinato",
+            tint = if (isCooked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -746,6 +813,7 @@ private fun ProposalDetailScreen(
     ingredients: List<MealIngredient>,
     onBack: () -> Unit,
     onEdit: (MealProposal) -> Unit,
+    onUpdateStatus: (MealProposal, MealStatus) -> Unit,
     onDelete: (MealProposal) -> Unit,
     onAddIngredient: (String) -> Unit,
     onEditIngredient: (MealIngredient) -> Unit,
@@ -758,6 +826,10 @@ private fun ProposalDetailScreen(
             Text(proposal.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         }
         Text(proposal.mealSlot.uppercase(Locale.getDefault()), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        ProposalStatusButton(
+            proposal = proposal,
+            onStatusChange = { status -> onUpdateStatus(proposal, status) }
+        )
         if (proposal.notes.isNotBlank()) {
             Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
                 Text(proposal.notes, modifier = Modifier.padding(12.dp))

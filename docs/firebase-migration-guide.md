@@ -5,7 +5,7 @@ This document records the migration path from Google Sheets + Apps Script to Fir
 ## Final state snapshot
 
 - Firebase Auth (anonymous) and Firestore are the only runtime dependencies.
-- google-services.json is provided per environment under ndroid-app/app/.
+- `google-services.json` is provided per environment under `android-app/app/`.
 - Realtime access flows through HouseholdRepository (invite codes + membership) and FirestoreMenuDataSource (proposals, ingredients, shopping).
 - Offline persistence is enabled; menu data survives short network drops.
 - Firestore security rules restrict reads and writes to household members only.
@@ -19,7 +19,7 @@ This document records the migration path from Google Sheets + Apps Script to Fir
    - Enable Anonymous Auth.
    - Create Firestore (production mode) and apply the rules from docs/firestore-security-rules.md.
 2. **Wire the Android app**
-   - Add Firebase BoM, Auth, and Firestore dependencies to ndroid-app/app/build.gradle.kts.
+   - Add Firebase BoM, Auth, and Firestore dependencies to `android-app/app/build.gradle.kts`.
    - Apply the Google Services Gradle plugin.
    - Drop legacy OkHttp/WorkManager dependencies, along with pending operations and token storage.
 3. **Add household onboarding**
@@ -31,11 +31,10 @@ This document records the migration path from Google Sheets + Apps Script to Fir
    - Map Firestore documents to domain models (RemoteProposal, RemoteIngredient, RemoteShoppingItem).
    - Update MenuRepository to drop HTTP sync/pending operations and rely on Firestore flows.
 5. **Update UI + cache**
-   - MenuViewModel listens to Firestore streams and merges manual shopping entries with derived ones from ingredients marked 
-eedToBuy = true.
+   - MenuViewModel listens to Firestore streams and merges manual shopping entries with derived ones from ingredients marked `needToBuy = true`.
    - MenuCache keeps the latest snapshot used by Compose screens.
 6. **Optional Cloud Functions**
-   - Functions under unctions/ mirror ingredient changes into the shopping collection and expose a callable join helper.
+   - Functions under `functions/` mirror ingredient changes into the shopping collection and expose a callable join helper.
    - Deployment commands documented in docs/firebase-backend-setup.md.
 7. **Testing**
    - Unit tests updated to mock the Firestore data source via fake flows.
@@ -76,7 +75,7 @@ importHousehold('YOUR_HOUSEHOLD_ID', require('./export.json')).then(() => {
 
 ## Troubleshooting notes
 
-- **google-services.json missing:** place the file under ndroid-app/app/ and re-run the build.
+- **google-services.json missing:** place the file under `android-app/app/` and re-run the build.
 - **User not authenticated:** ensure anonymous auth is enabled and check logcat for FirebaseAuth initialization errors.
 - **Rules denying writes:** confirm the invite flow added the current UID to the members array.
 - **Shopping list duplicates:** deploy the optional Cloud Function or dedupe locally by ingredientId (already handled in MenuViewModel).

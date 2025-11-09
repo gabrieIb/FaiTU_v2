@@ -2,51 +2,49 @@ package com.menumanager.data.remote
 
 import kotlinx.coroutines.flow.Flow
 
-/**
- * Contratto astratto per la sorgente dati remota (Sheets o Firebase).
- * Permette una migrazione incrementale dietro feature flag senza cambiare il resto dell'app.
- */
-interface MenuRemoteDataSource {
-    // --- Proposals (MenuPlan) ---
-    fun streamProposals(): Flow<List<RemoteProposal>>
-    suspend fun upsertProposal(proposal: RemoteProposal)
-    suspend fun deleteProposal(proposalId: String)
-
-    // --- Ingredients ---
-    fun streamIngredients(): Flow<List<RemoteIngredient>>
-    suspend fun upsertIngredient(ingredient: RemoteIngredient)
-    suspend fun deleteIngredient(ingredientId: String)
-
-    // --- Shopping list ---
-    fun streamShopping(): Flow<List<RemoteShoppingItem>>
-    suspend fun upsertShoppingItem(item: RemoteShoppingItem)
-    suspend fun deleteShoppingItem(shoppingId: String)
+data class RemoteProposal(
+	val proposalId: String,
+	val mealSlot: String,
+	val title: String,
+	val notes: String? = null,
+	val createdBy: String,
+	val createdAt: String,
+	val updatedAt: String,
+	val status: String = DEFAULT_STATUS
+) {
+	companion object {
+		const val DEFAULT_STATUS: String = "pending"
+	}
 }
 
-// Remote DTOs (semplificati); saranno mappati ai domain model esistenti nel Repository.
-data class RemoteProposal(
-    val proposalId: String,
-    val mealSlot: String,
-    val title: String,
-    val notes: String?,
-    val createdBy: String,
-    val createdAt: String,
-    val updatedAt: String
-)
-
 data class RemoteIngredient(
-    val ingredientId: String,
-    val proposalId: String,
-    val name: String,
-    val needToBuy: Boolean,
-    val updatedAt: String
+	val ingredientId: String,
+	val proposalId: String,
+	val name: String,
+	val needToBuy: Boolean,
+	val updatedAt: String
 )
 
 data class RemoteShoppingItem(
-    val shoppingId: String,
-    val ingredientId: String?,
-    val proposalId: String?,
-    val name: String,
-    val status: String,
-    val updatedAt: String
+	val shoppingId: String,
+	val ingredientId: String?,
+	val proposalId: String?,
+	val name: String,
+	val status: String,
+	val updatedAt: String
 )
+
+interface MenuRemoteDataSource {
+	fun streamProposals(): Flow<List<RemoteProposal>>
+	fun streamIngredients(): Flow<List<RemoteIngredient>>
+	fun streamShopping(): Flow<List<RemoteShoppingItem>>
+
+	suspend fun upsertProposal(proposal: RemoteProposal)
+	suspend fun deleteProposal(proposalId: String)
+
+	suspend fun upsertIngredient(ingredient: RemoteIngredient)
+	suspend fun deleteIngredient(ingredientId: String)
+
+	suspend fun upsertShoppingItem(item: RemoteShoppingItem)
+	suspend fun deleteShoppingItem(shoppingId: String)
+}

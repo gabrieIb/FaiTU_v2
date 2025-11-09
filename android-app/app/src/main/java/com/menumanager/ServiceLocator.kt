@@ -4,6 +4,7 @@ import android.content.Context
 import com.menumanager.data.HouseholdRepository
 import com.menumanager.data.MenuRepository
 import com.google.firebase.FirebaseApp
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.CoroutineScope
 
@@ -24,7 +25,11 @@ class ServiceLocator(
 
     // HouseholdRepository per gestire la famiglia
     val householdRepository: HouseholdRepository by lazy {
-        HouseholdRepository(context.applicationContext)
+        HouseholdRepository(
+            context = context.applicationContext,
+            firestore = firestore,
+            auth = FirebaseAuth.getInstance()
+        )
     }
 
     val menuRepository: MenuRepository = MenuRepository(

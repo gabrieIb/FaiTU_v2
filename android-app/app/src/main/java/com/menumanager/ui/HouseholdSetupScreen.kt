@@ -1,174 +1,110 @@
 package com.menumanager.ui
 
-import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HouseholdSetupScreen(
-    state: HouseholdState,
-    onCreateHousehold: () -> Unit,
-    onJoinHousehold: (String) -> Unit,
-    onDismissError: () -> Unit
+	state: HouseholdState,
+	onCreateHousehold: () -> Unit,
+	onJoinHousehold: (String) -> Unit,
+	onDismissError: () -> Unit
 ) {
-    var inviteCodeInput by remember { mutableStateOf("") }
-    var showJoinDialog by remember { mutableStateOf(false) }
+	var inviteCode by rememberSaveable { mutableStateOf("") }
+	val isProcessing = state is HouseholdState.Creating || state is HouseholdState.Joining
+	val isLoading = state is HouseholdState.Loading
+	val errorMessage = (state as? HouseholdState.Error)?.message
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Configura la famiglia") },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(24.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            when (state) {
-                is HouseholdState.Loading -> CircularProgressIndicator()
-                is HouseholdState.NeedsSetup -> {
-                    Text(
-                        text = "Benvenuto!",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "Questo è il primo avvio. Scegli come procedere:",
-                        style = MaterialTheme.typography.bodyLarge,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(modifier = Modifier.height(32.dp))
-                    Button(
-                        onClick = onCreateHousehold,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Filled.Add, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Crea una nuova famiglia")
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    OutlinedButton(
-                        onClick = { showJoinDialog = true },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Filled.Check, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Unisciti con codice invito")
-                    }
-                }
-                is HouseholdState.Creating -> {
-                    CircularProgressIndicator()
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("Creazione famiglia in corso...")
-                }
-                is HouseholdState.Joining -> {
-                    CircularProgressIndicator()
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("Mi sto unendo...")
-                }
-                is HouseholdState.Ready -> {
-                    // Questo stato sarà gestito dal parent (MainActivity mostrerà l'app principale)
-                    Text("Famiglia configurata!")
-                }
-                is HouseholdState.Error -> {
-                    Text(
-                        text = "Errore: ${state.message}",
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Button(onClick = onDismissError) {
-                        Text("Riprova")
-                    }
-                }
-            }
-        }
-    }
+	Surface(modifier = Modifier.fillMaxSize()) {
+		Column(
+			modifier = Modifier
+				.fillMaxSize()
+				.padding(horizontal = 24.dp, vertical = 32.dp),
+			verticalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterVertically),
+			horizontalAlignment = Alignment.CenterHorizontally
+		) {
+			Text(
+				text = "Benvenuto",
+				style = MaterialTheme.typography.headlineMedium,
+				fontWeight = FontWeight.SemiBold
+			)
+			Text(
+				text = "Crea una nuova famiglia oppure inserisci un codice invito per unirti a quella esistente.",
+				style = MaterialTheme.typography.bodyMedium
+			)
 
-    if (showJoinDialog) {
-        AlertDialog(
-            onDismissRequest = { showJoinDialog = false },
-            title = { Text("Inserisci codice invito") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Chiedi all'altra persona il codice a 6 caratteri.")
-                    TextField(
-                        value = inviteCodeInput,
-                        onValueChange = { inviteCodeInput = it.uppercase().take(6) },
-                        label = { Text("Codice (6 caratteri)") },
-                        singleLine = true
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        onJoinHousehold(inviteCodeInput)
-                        showJoinDialog = false
-                        inviteCodeInput = ""
-                    },
-                    enabled = inviteCodeInput.length == 6
-                ) {
-                    Text("Unisciti")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showJoinDialog = false }) {
-                    Text("Annulla")
-                }
-            }
-        )
-    }
-}
+			if (isLoading) {
+				CircularProgressIndicator()
+			} else {
+				Button(
+					onClick = onCreateHousehold,
+					enabled = !isProcessing,
+					modifier = Modifier.fillMaxWidth()
+				) {
+					Text("Crea nuova famiglia")
+				}
 
-@Composable
-fun HouseholdInfoCard(inviteCode: String?) {
-    if (inviteCode != null) {
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer
-            )
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "Codice invito per l'altra persona:",
-                    style = MaterialTheme.typography.labelLarge
-                )
-                Text(
-                    text = inviteCode,
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = "Condividi questo codice per far unire l'altro dispositivo.",
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-        }
-    }
+				Column(
+					modifier = Modifier.fillMaxWidth(),
+					verticalArrangement = Arrangement.spacedBy(12.dp)
+				) {
+					TextField(
+						value = inviteCode,
+						onValueChange = { inviteCode = it.uppercase(Locale.ROOT).take(8) },
+						label = { Text("Codice invito") },
+						modifier = Modifier.fillMaxWidth(),
+						enabled = !isProcessing
+					)
+					Button(
+						onClick = { onJoinHousehold(inviteCode) },
+						enabled = inviteCode.length >= 4 && !isProcessing,
+						modifier = Modifier.fillMaxWidth()
+					) {
+						Text("Unisciti")
+					}
+				}
+			}
+
+			if (errorMessage != null) {
+				Column(
+					modifier = Modifier.fillMaxWidth(),
+					verticalArrangement = Arrangement.spacedBy(8.dp),
+					horizontalAlignment = Alignment.CenterHorizontally
+				) {
+					Text(text = errorMessage, color = MaterialTheme.colorScheme.error)
+					TextButton(onClick = onDismissError) {
+						Text("OK")
+					}
+				}
+			}
+
+			Spacer(modifier = Modifier.height(12.dp))
+
+			if (isProcessing) {
+				CircularProgressIndicator()
+			}
+		}
+	}
 }
